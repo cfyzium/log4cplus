@@ -1,10 +1,10 @@
 // Module:  Log4CPLUS
-// File:    socket-win32.cxx
+// File:    socket.cxx
 // Created: 4/2003
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2013 Tad E. Smith
+// Copyright 2003-2015 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -88,7 +88,7 @@ AbstractSocket::shutdown()
 {
     if(sock != INVALID_SOCKET_VALUE) {
         shutdownSocket(sock);
-    }    
+    }
 }
 
 

@@ -4,7 +4,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2013 Tad E. Smith
+// Copyright 2003-2015 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -89,7 +89,8 @@ init_winsock_worker ()
         // Wait for state change.
         while (true)
         {
-            switch (winsock_state)
+            LONG state = InterlockedExchangeAdd (&winsock_state, 0);
+            switch (state)
             {
             case WS_INITIALIZED:
                 return;

@@ -4,7 +4,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2001-2013 Tad E. Smith
+// Copyright 2001-2015 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,7 +34,9 @@
 #include <algorithm>
 #include <sstream>
 #include <cstdio>
+#include <cmath>
 #include <stdexcept>
+#include <cmath> // std::fmod
 
 #if defined (__BORLANDC__)
 // For _wrename() and _wremove() on Windows.
@@ -67,7 +69,7 @@ namespace
 long const LOG4CPLUS_FILE_NOT_FOUND = ENOENT;
 
 
-static 
+static
 long
 file_rename (tstring const & src, tstring const & target)
 {
@@ -116,8 +118,8 @@ loglog_renaming_result (helpers::LogLog & loglog, tstring const & src,
     if (ret == 0)
     {
         loglog.debug (
-            LOG4CPLUS_TEXT("Renamed file ") 
-            + src 
+            LOG4CPLUS_TEXT("Renamed file ")
+            + src
             + LOG4CPLUS_TEXT(" to ")
             + target);
     }
@@ -143,7 +145,7 @@ loglog_opening_result (helpers::LogLog & loglog,
     if (! os)
     {
         loglog.error (
-            LOG4CPLUS_TEXT("Failed to open file ") 
+            LOG4CPLUS_TEXT("Failed to open file ")
             + filename);
     }
 }
@@ -279,6 +281,9 @@ FileAppenderBase::init()
     helpers::LockFileGuard guard;
     if (useLockFile && ! lockFile.get ())
     {
+        if (createDirs)
+            internal::make_dirs (lockFileName);
+
         try
         {
             lockFile.reset (new helpers::LockFile (lockFileName));
@@ -337,11 +342,11 @@ FileAppenderBase::append(const spi::InternalLoggingEvent& event)
 {
     if(!out.good()) {
         if(!reopen()) {
-            getErrorHandler()->error(  LOG4CPLUS_TEXT("file is not open: ") 
+            getErrorHandler()->error(  LOG4CPLUS_TEXT("file is not open: ")
                                      + filename);
             return;
         }
-        // Resets the error handler to make it 
+        // Resets the error handler to make it
         // ready to handle a future append error.
         else
             getErrorHandler()->reset();
@@ -552,7 +557,7 @@ RollingFileAppender::rollover(bool alreadyLocked)
     out.close();
     // Reset flags since the C++ standard specified that all the flags
     // should remain unchanged on a close.
-    out.clear(); 
+    out.clear();
 
     if (useLockFile)
     {
@@ -603,8 +608,8 @@ RollingFileAppender::rollover(bool alreadyLocked)
 #endif
 
         loglog.debug (
-            LOG4CPLUS_TEXT("Renaming file ") 
-            + filename 
+            LOG4CPLUS_TEXT("Renaming file ")
+            + filename
             + LOG4CPLUS_TEXT(" to ")
             + target);
         ret = file_rename (filename, target);
@@ -627,9 +632,11 @@ RollingFileAppender::rollover(bool alreadyLocked)
 
 DailyRollingFileAppender::DailyRollingFileAppender(
     const tstring& filename_, DailyRollingFileSchedule schedule_,
-    bool immediateFlush_, int maxBackupIndex_, bool createDirs_)
+    bool immediateFlush_, int maxBackupIndex_, bool createDirs_,
+    bool rollOnClose_, const tstring& datePattern_)
     : FileAppender(filename_, std::ios_base::app, immediateFlush_, createDirs_)
-    , maxBackupIndex(maxBackupIndex_)
+    , maxBackupIndex(maxBackupIndex_), rollOnClose(rollOnClose_)
+    , datePattern(datePattern_)
 {
     init(schedule_);
 }
@@ -640,6 +647,7 @@ DailyRollingFileAppender::DailyRollingFileAppender(
     const Properties& properties)
     : FileAppender(properties, std::ios_base::app)
     , maxBackupIndex(10)
+    , rollOnClose(true)
 {
     DailyRollingFileSchedule theSchedule = DAILY;
     tstring scheduleStr (helpers::toUpper (
@@ -664,12 +672,67 @@ DailyRollingFileAppender::DailyRollingFileAppender(
             + properties.getProperty(LOG4CPLUS_TEXT("Schedule")));
         theSchedule = DAILY;
     }
-    
+
+    properties.getBool (rollOnClose, LOG4CPLUS_TEXT("RollOnClose"));
+    properties.getString (datePattern, LOG4CPLUS_TEXT("DatePattern"));
     properties.getInt (maxBackupIndex, LOG4CPLUS_TEXT("MaxBackupIndex"));
 
     init(theSchedule);
 }
 
+
+namespace
+{
+
+
+static
+Time
+round_time (Time const & t, time_t seconds)
+{
+    return Time (
+        t.getTime ()
+        - static_cast<time_t>(std::fmod (
+                static_cast<double>(t.getTime ()),
+                static_cast<double>(seconds))));
+}
+
+
+static
+Time
+round_time_and_add (Time const & t, Time const & seconds)
+{
+    return round_time (t, seconds.sec ()) + seconds;
+}
+
+
+static
+long
+local_time_offset (Time t)
+{
+    tm time_local, time_gmt;
+
+    t.localtime (&time_local);
+    t.gmtime (&time_gmt);
+
+    t.setTime (&time_local);
+    Time t2 = t;
+
+    t.setTime (&time_gmt);
+    Time t3 = t;
+
+    return static_cast<long>(t2.sec () - t3.sec ());
+}
+
+
+static
+Time
+adjust_for_time_zone (Time const & t, long tzoffset)
+{
+    return t - Time (tzoffset);
+}
+
+
+} // namespace
 
 
 void
@@ -742,7 +805,8 @@ DailyRollingFileAppender::~DailyRollingFileAppender()
 void
 DailyRollingFileAppender::close()
 {
-    rollover();
+    if (rollOnClose)
+        rollover();
     FileAppender::close();
 }
 
@@ -819,12 +883,12 @@ DailyRollingFileAppender::rollover(bool alreadyLocked)
     // possible to rename over existing file, e.g. "log.2009-11-07".
     ret = file_remove (scheduledFilename);
 #endif
-   
+
     // Rename filename to scheduledFilename,
     // e.g. rename "log" to "log.2009-11-07".
     loglog.debug(
         LOG4CPLUS_TEXT("Renaming file ")
-        + filename 
+        + filename
         + LOG4CPLUS_TEXT(" to ")
         + scheduledFilename);
     ret = file_rename (filename, scheduledFilename);
@@ -850,7 +914,7 @@ DailyRollingFileAppender::calculateNextRolloverTime(const Time& t) const
 {
     switch(schedule)
     {
-    case MONTHLY: 
+    case MONTHLY:
     {
         struct tm nextMonthTime;
         t.localtime(&nextMonthTime);
@@ -863,14 +927,17 @@ DailyRollingFileAppender::calculateNextRolloverTime(const Time& t) const
                 LOG4CPLUS_TEXT("DailyRollingFileAppender::calculateNextRolloverTime()-")
                 LOG4CPLUS_TEXT(" setTime() returned error"));
             // Set next rollover to 31 days in future.
-            ret = (t + Time(2678400));
+            ret = round_time (t, 24 * 60 * 60) + Time(2678400);
         }
 
         return ret;
     }
 
     case WEEKLY:
-        return (t + Time(7 * 24 * 60 * 60));
+    {
+        Time next = round_time (t, 24 * 60 * 60) + Time (7 * 24 * 60 * 60);
+        return adjust_for_time_zone (next, local_time_offset (next));
+    }
 
     default:
         helpers::getLogLog ().error (
@@ -879,16 +946,22 @@ DailyRollingFileAppender::calculateNextRolloverTime(const Time& t) const
         // Fall through.
 
     case DAILY:
-        return (t + Time(24 * 60 * 60));
+    {
+        Time next = round_time_and_add (t, Time (24 * 60 * 60));
+        return adjust_for_time_zone (next, local_time_offset (next));
+    }
 
     case TWICE_DAILY:
-        return (t + Time(12 * 60 * 60));
+    {
+        Time next = round_time_and_add (t, Time (12 * 60 * 60));
+        return adjust_for_time_zone (next, local_time_offset (next));
+    }
 
     case HOURLY:
-        return (t + Time(60 * 60));
+        return round_time_and_add (t, Time (60 * 60));
 
     case MINUTELY:
-        return (t + Time(60));
+        return round_time_and_add (t, Time (60));
     };
 }
 
@@ -898,38 +971,43 @@ tstring
 DailyRollingFileAppender::getFilename(const Time& t) const
 {
     tchar const * pattern = 0;
-    switch (schedule)
+    if (datePattern.empty())
     {
-    case MONTHLY:
-        pattern = LOG4CPLUS_TEXT("%Y-%m");
-        break;
+        switch (schedule)
+        {
+        case MONTHLY:
+            pattern = LOG4CPLUS_TEXT("%Y-%m");
+            break;
 
-    case WEEKLY:
-        pattern = LOG4CPLUS_TEXT("%Y-%W");
-        break;
+        case WEEKLY:
+            pattern = LOG4CPLUS_TEXT("%Y-%W");
+            break;
 
-    default:
-        helpers::getLogLog ().error (
-            LOG4CPLUS_TEXT ("DailyRollingFileAppender::getFilename()-")
-            LOG4CPLUS_TEXT (" invalid schedule value"));
-        // Fall through.
+        default:
+            helpers::getLogLog ().error (
+                LOG4CPLUS_TEXT ("DailyRollingFileAppender::getFilename()-")
+                LOG4CPLUS_TEXT (" invalid schedule value"));
+            // Fall through.
 
-    case DAILY:
-        pattern = LOG4CPLUS_TEXT("%Y-%m-%d");
-        break;
+        case DAILY:
+            pattern = LOG4CPLUS_TEXT("%Y-%m-%d");
+            break;
 
-    case TWICE_DAILY:
-        pattern = LOG4CPLUS_TEXT("%Y-%m-%d-%p");
-        break;
+        case TWICE_DAILY:
+            pattern = LOG4CPLUS_TEXT("%Y-%m-%d-%p");
+            break;
 
-    case HOURLY:
-        pattern = LOG4CPLUS_TEXT("%Y-%m-%d-%H");
-        break;
+        case HOURLY:
+            pattern = LOG4CPLUS_TEXT("%Y-%m-%d-%H");
+            break;
 
-    case MINUTELY:
-        pattern = LOG4CPLUS_TEXT("%Y-%m-%d-%H-%M");
-        break;
-    };
+        case MINUTELY:
+            pattern = LOG4CPLUS_TEXT("%Y-%m-%d-%H-%M");
+            break;
+        };
+    }
+    else
+        pattern = datePattern.c_str();
 
     tstring result (filename);
     result += LOG4CPLUS_TEXT(".");
@@ -956,7 +1034,7 @@ preprocessDateTimePattern(const tstring& pattern, DailyRollingFileSchedule& sche
     {
         tchar c = pattern[i];
         size_t end_pos = pattern.find_first_not_of(c, i);
-        int len = (end_pos == tstring::npos ? pattern.length() : end_pos) - i;
+        size_t len = (end_pos == tstring::npos ? pattern.length() : end_pos) - i;
 
         switch (c)
         {
@@ -1124,25 +1202,29 @@ TimeBasedRollingFileAppender::TimeBasedRollingFileAppender(
     int maxHistory_,
     bool cleanHistoryOnStart_,
     bool immediateFlush_,
-    bool createDirs_)
+    bool createDirs_,
+    bool rollOnClose_)
     : FileAppenderBase(filename_, std::ios_base::app, immediateFlush_, createDirs_)
     , filenamePattern(filenamePattern_)
     , schedule(DAILY)
     , maxHistory(maxHistory_)
     , cleanHistoryOnStart(cleanHistoryOnStart_)
+    , rollOnClose(rollOnClose_)
 { }
 
 TimeBasedRollingFileAppender::TimeBasedRollingFileAppender(
     const log4cplus::helpers::Properties& properties)
     : FileAppenderBase(properties, std::ios_base::app)
-    , filenamePattern("%d.log")
+    , filenamePattern(LOG4CPLUS_TEXT("%d.log"))
     , schedule(DAILY)
     , maxHistory(10)
     , cleanHistoryOnStart(false)
+    , rollOnClose(true)
 {
     filenamePattern = properties.getProperty(LOG4CPLUS_TEXT("FilenamePattern"));
     properties.getInt(maxHistory, LOG4CPLUS_TEXT("MaxHistory"));
     properties.getBool(cleanHistoryOnStart, LOG4CPLUS_TEXT("CleanHistoryOnStart"));
+    properties.getBool(rollOnClose, LOG4CPLUS_TEXT("RollOnClose"));
     filenamePattern = preprocessFilenamePattern(filenamePattern, schedule);
 
     init();
@@ -1210,7 +1292,8 @@ TimeBasedRollingFileAppender::open(std::ios_base::openmode mode)
 void
 TimeBasedRollingFileAppender::close()
 {
-    rollover();
+    if (rollOnClose)
+        rollover();
     FileAppenderBase::close();
 }
 
@@ -1276,12 +1359,12 @@ TimeBasedRollingFileAppender::clean(Time time)
     interval += Time(1);
 
     int periodDuration = getRolloverPeriodDuration();
-    int periods = interval.sec() / periodDuration;
+    long periods = static_cast<long>(interval.sec() / periodDuration);
 
     helpers::LogLog & loglog = helpers::getLogLog();
-    for (int i = 0; i < periods; i++)
+    for (long i = 0; i < periods; i++)
     {
-        int periodToRemove = (-maxHistory - 1) - i;
+        long periodToRemove = (-maxHistory - 1) - i;
         Time timeToRemove = time + Time(periodToRemove * periodDuration);
         tstring filenameToRemove = timeToRemove.getFormattedTime(filenamePattern, false);
         loglog.debug(LOG4CPLUS_TEXT("Removing file ") + filenameToRemove);

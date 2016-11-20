@@ -5,7 +5,7 @@
 // Author:  Tad E. Smith
 //
 //
-// Copyright 2003-2013 Tad E. Smith
+// Copyright 2003-2015 Tad E. Smith
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -94,12 +94,14 @@
 #  define LOG4CPLUS_HAVE__VSNPRINTF_S
 #  define LOG4CPLUS_HAVE__VSNWPRINTF_S
 
+// MS secure version of _tsopen().
+#  define LOG4CPLUS_HAVE__TSOPEN_S
+#endif
+
+#if defined (_MSC_VER) && _MSC_VER >= 1400
 // MS printf-like functions supporting positional parameters.
 #  define LOG4CPLUS_HAVE__VSPRINTF_P
 #  define LOG4CPLUS_HAVE__VSWPRINTF_P
-
-// MS secure version of _tsopen().
-#  define LOG4CPLUS_HAVE__TSOPEN_S
 #endif
 
 #define LOG4CPLUS_HAVE__TSOPEN

@@ -1,4 +1,4 @@
-//  Copyright (C) 2009-2013, Vaclav Haisman. All rights reserved.
+//  Copyright (C) 2009-2015, Vaclav Haisman. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without modifica-
 //  tion, are permitted provided that the following conditions are met:
@@ -131,12 +131,14 @@
 #if defined (__GNUC__) && __GNUC__ >= 3
 #  define LOG4CPLUS_ATTRIBUTE_NORETURN __attribute__ ((__noreturn__))
 #  define LOG4CPLUS_ATTRIBUTE_PURE __attribute__ ((__pure__))
+#  define LOG4CPLUS_ATTRIBUTE_DEPRECATED __attribute__ ((__deprecated__))
 #  define LOG4CPLUS_BUILTIN_EXPECT(exp, c) __builtin_expect ((exp), (c))
 #else
 #  if ! defined (LOG4CPLUS_ATTRIBUTE_NORETURN)
 #    define LOG4CPLUS_ATTRIBUTE_NORETURN /* empty */
 #  endif
 #  define LOG4CPLUS_ATTRIBUTE_PURE /* empty */
+#  define LOG4CPLUS_ATTRIBUTE_DEPRECATED /* empty */
 #  define LOG4CPLUS_BUILTIN_EXPECT(exp, c) (exp)
 #endif
 
@@ -154,9 +156,12 @@
 #  pragma once
 #endif
 
-#if defined (LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR)
+#if defined (LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR_PRIORITY)
 #  define LOG4CPLUS_CONSTRUCTOR_FUNC(prio) \
     __attribute__ ((__constructor__ ((prio))))
+#elif defined (LOG4CPLUS_HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR)
+#  define LOG4CPLUS_CONSTRUCTOR_FUNC(prio) \
+    __attribute__ ((__constructor__))
 #else
 #  define LOG4CPLUS_CONSTRUCTOR_FUNC(prio) /* empty */
 #endif

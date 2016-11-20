@@ -33,6 +33,10 @@ if(NOT LOG4CPLUS_SINGLE_THREADED)
   message (STATUS "Threads: ${CMAKE_THREAD_LIBS_INIT}")
 endif(NOT LOG4CPLUS_SINGLE_THREADED)
 
+if(LOG4CPLUS_SINGLE_THREADED AND LOG4CPLUS_BUILD_LOGGINGSERVER)
+  message (FATAL_ERROR "The logging server requires the multi-thread capability.")
+endif(LOG4CPLUS_SINGLE_THREADED AND LOG4CPLUS_BUILD_LOGGINGSERVER)
+
 set(BUILD_SHARED_LIBS TRUE CACHE BOOL "If TRUE, log4cplus is built as a shared library, otherwise as a static library")
 
 if (WIN32)
@@ -66,22 +70,26 @@ option(ENABLE_SYMBOLS_VISIBILITY
   "Enable compiler and platform specific options for symbols visibility"
   ON)
 
-set(_WIN32_WINNT 0x0500 CACHE STRING "Define Windows API version to use.")
+set(_WIN32_WINNT 0x0502 CACHE STRING "Define Windows API version to use.")
 
-if (NOT ${BUILD_SHARED_LIBS})
-  # set S-prefix for static build
-  set (log4cplus_postfix "${log4cplus_postfix}S")
-endif()
+option(LOG4CPLUS_ENABLE_DECORATED_LIBRARY_NAME
+  "Turns on resulting file name decoration for static and UNICODE builds." ON)
+if (LOG4CPLUS_ENABLE_DECORATED_LIBRARY_NAME)
+  if (NOT ${BUILD_SHARED_LIBS})
+    # set S-prefix for static build
+    set (log4cplus_postfix "${log4cplus_postfix}S")
+  endif ()
 
-if (UNICODE)
-  set (log4cplus_postfix "${log4cplus_postfix}U")
-endif (UNICODE)
+  if (UNICODE)
+    set (log4cplus_postfix "${log4cplus_postfix}U")
+  endif (UNICODE)
+endif (LOG4CPLUS_ENABLE_DECORATED_LIBRARY_NAME)
+
+set (log4cplus "log4cplus${log4cplus_postfix}")
 
 if (WITH_ICONV)
   set(LOG4CPLUS_WITH_ICONV 1)
 endif ()
-
-set (log4cplus "log4cplus${log4cplus_postfix}")
 
 if(LOG4CPLUS_CONFIGURE_CHECKS_PATH)
   get_filename_component(LOG4CPLUS_CONFIGURE_CHECKS_PATH "${LOG4CPLUS_CONFIGURE_CHECKS_PATH}" ABSOLUTE)
